@@ -11,8 +11,20 @@ import (
 )
 
 type event struct {
+	processID string // node id where this event was registered
 	timestamp int
 	payload   string
+}
+
+// before returns true if a comes before b.
+//
+// Uses tie-breakers to ensure a total ordering of events with deterministic results.
+func before(a, b event) bool {
+	if a.timestamp != b.timestamp {
+		// no need for tie-breakers
+		return a.timestamp < b.timestamp
+	}
+	return a.processID < b.processID
 }
 
 // command tells a node what action to perform
@@ -42,6 +54,7 @@ func newNode(id string) *node {
 func (n *node) send(dest *node) {
 	n.logicalTime++
 	ev := event{
+		processID: n.procID,
 		timestamp: n.logicalTime,
 		payload:   fmt.Sprintf("[%s] send -> %s", n.procID, dest.procID),
 	}
@@ -50,6 +63,7 @@ func (n *node) send(dest *node) {
 
 	// send message to destination's inbox
 	dest.inbox <- event{
+		processID: n.procID,
 		timestamp: n.logicalTime,
 		payload:   fmt.Sprintf("msg from %s", n.procID),
 	}
@@ -59,6 +73,7 @@ func (n *node) send(dest *node) {
 func (n *node) receive(ev event) {
 	n.logicalTime = max(n.logicalTime, ev.timestamp) + 1
 	logEv := event{
+		processID: n.procID,
 		timestamp: n.logicalTime,
 		payload:   fmt.Sprintf("[%s] recv <- %s", n.procID, ev.payload),
 	}
@@ -94,8 +109,12 @@ func (n *node) run(wg *sync.WaitGroup) {
 	}
 }
 
-func (n *node) Events() iter.Seq[event] {
+func (n *node) events() iter.Seq[event] {
 	return slices.Values(n.eventLog)
+}
+
+func (n *node) totalEvents() int {
+	return len(n.eventLog)
 }
 
 func main() {
@@ -137,11 +156,30 @@ func main() {
 
 	// print event logs
 	fmt.Println()
+	totalEvents := 0
+	eventLog := make([]event, 0)
 	for _, n := range nodes {
 		slog.Info("event log", slog.String("node", n.procID))
-		for ev := range n.Events() {
+		totalEvents += n.totalEvents()
+		eventLog = slices.AppendSeq(eventLog, n.events())
+		for ev := range n.events() {
 			slog.Info("  event", slog.String("payload", ev.payload), slog.Int("ts", ev.timestamp))
 		}
 		fmt.Println()
+	}
+
+	// print global event log
+	fmt.Println()
+	slices.SortFunc(eventLog, func(a, b event) int {
+		if before(a, b) {
+			return -1
+		} else if before(b, a) {
+			return 1
+		}
+		return 0
+	})
+	slog.Info("global event log", slog.Int("total events", totalEvents))
+	for _, ev := range eventLog {
+		slog.Info("event", slog.String("payload", ev.payload), slog.Int("ts", ev.timestamp))
 	}
 }
