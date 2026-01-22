@@ -1,0 +1,8 @@
+go 1.25
+
+use (
+	go/exercises/distributed-systems/22-lamport-clocks
+	go/exercises/dsa/1_1-Recommendation-Engine
+	go/exercises/dsa/2_1-undo-system
+	go/libs/stl
+)
