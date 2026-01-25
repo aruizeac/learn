@@ -67,6 +67,16 @@ func (h *Heap[T]) PopItem() T {
 
 func (h *Heap[T]) Peek() T { return h.items[0] } // assumes non-empty
 
+// IndexOf returns the index of the first item satisfying the predicate, or -1 if none.
+func (h *Heap[T]) IndexOf(predicate func(v T) bool) int {
+	for i, v := range h.items {
+		if predicate(v) {
+			return i
+		}
+	}
+	return -1
+}
+
 // Values returns a sequence of all items in the heap, in order.
 // In addition, it pops all items from the heap, making this method unreversible.
 func (h *Heap[T]) Values() iter.Seq[T] {

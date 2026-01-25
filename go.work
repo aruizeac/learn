@@ -4,5 +4,6 @@ use (
 	go/exercises/distributed-systems/22-lamport-clocks
 	go/exercises/dsa/1_1-Recommendation-Engine
 	go/exercises/dsa/2_1-undo-system
+	go/exercises/dsa/2_2-task-scheduler
 	go/libs/stl
 )
