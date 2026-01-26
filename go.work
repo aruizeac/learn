@@ -6,5 +6,6 @@ use (
 	go/exercises/dsa/2_1-undo-system
 	go/exercises/dsa/2_2-task-scheduler
 	go/exercises/dsa/check_2_2_1-code-linter
+	go/exercises/dsa/check_2_2_2-metric-dashboard
 	go/libs/stl
 )
