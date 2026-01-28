@@ -1,6 +1,7 @@
 package metric
 
 import (
+	"stl/deque"
 	"time"
 )
 
@@ -149,6 +150,11 @@ func WithBucketWindowSize(size time.Duration) AggregatorOption {
 	return func(c *AggregatorConfig) { c.BucketWindowSize = size }
 }
 
+// WithRetentionWindow sets the retention window.
+func WithRetentionWindow(window time.Duration) AggregatorOption {
+	return func(c *AggregatorConfig) { c.RetentionWindow = window }
+}
+
 type addMetricOptions struct {
 	timestamp time.Time
 }
@@ -171,4 +177,87 @@ func WithTimestamp(t time.Time) AddOption {
 // It enables even distribution of metrics across buckets.
 func bucketIndex(timestamp time.Time, bucketSize time.Duration) int {
 	return int(timestamp.Unix()/int64(bucketSize.Seconds())) % 30
+}
+
+// - Sliding window aggregation
+
+type SlidingAggregator struct {
+	config  *SlidingAggregatorConfig
+	metrics map[string]*slidingWindowMetric
+}
+
+// NewSlidingAggregator returns a new SlidingAggregator with a default configuration.
+func NewSlidingAggregator(opts ...SlidingAggregatorOption) *SlidingAggregator {
+	options := defaultSlidingAggregatorConfig()
+	for _, opt := range opts {
+		opt(options)
+	}
+	return NewSlidingAggregatorWithConfig(options)
+}
+
+// NewSlidingAggregatorWithConfig returns a new SlidingAggregator with the given configuration.
+func NewSlidingAggregatorWithConfig(config *SlidingAggregatorConfig) *SlidingAggregator {
+	return &SlidingAggregator{config: config, metrics: make(map[string]*slidingWindowMetric)}
+}
+
+type slidingWindowMetric struct {
+	data  *deque.Deque[slidingWindowData]
+	sum   float64
+	count int64
+}
+
+type slidingWindowData struct {
+	timestamp time.Time
+	value     float64
+}
+
+func (a *SlidingAggregator) Add(metricID string, value float64, timestamp time.Time) {
+	metric, ok := a.metrics[metricID]
+	if !ok {
+		metric = &slidingWindowMetric{data: deque.NewDeque[slidingWindowData]()}
+		a.metrics[metricID] = metric
+	}
+	metric.data.PushBack(slidingWindowData{timestamp: timestamp, value: value})
+	metric.sum += value
+	metric.count++
+}
+
+func (a *SlidingAggregator) Average(metricID string, now time.Time) float64 {
+	metric, ok := a.metrics[metricID]
+	if !ok {
+		return 0
+	}
+
+	cutoff := now.Add(-a.config.RetentionWindow)
+	for !metric.data.Empty() {
+		item := metric.data.Front()
+		if item.timestamp.Before(cutoff) {
+			metric.data.PopFront()
+			metric.sum -= item.value
+			metric.count--
+		} else {
+			break // Remaining entries are newer, stop evicting
+		}
+	}
+	if metric.count == 0 {
+		return 0
+	}
+	return metric.sum / float64(metric.count)
+}
+
+// -- Options
+
+type SlidingAggregatorConfig struct {
+	RetentionWindow time.Duration
+}
+
+func defaultSlidingAggregatorConfig() *SlidingAggregatorConfig {
+	return &SlidingAggregatorConfig{RetentionWindow: time.Minute * 5}
+}
+
+type SlidingAggregatorOption func(aggregator *SlidingAggregatorConfig)
+
+// WithSlidingRetentionWindow sets the retention window.
+func WithSlidingRetentionWindow(window time.Duration) SlidingAggregatorOption {
+	return func(c *SlidingAggregatorConfig) { c.RetentionWindow = window }
 }
